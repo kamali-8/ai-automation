@@ -1,0 +1,234 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id           String        @id @default(cuid())
+  email        String        @unique
+  name         String
+  role         String        @default("INTERN") // "ADMIN" | "INTERN"
+  passwordHash String?       // Hashed password for Admin
+  domainId     String?
+  domain       Domain?       @relation(fields: [domainId], references: [id], onDelete: SetNull)
+  internships  Internship[]
+  submissions  Submission[]
+  activityLogs ActivityLog[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@index([email])
+  @@index([role])
+}
+
+model Domain {
+  id                       String             @id @default(cuid())
+  name                     String             @unique // e.g., "Python Development"
+  slug                     String             @unique // e.g., "python"
+  description              String?
+  totalDurationWeeks       Int                @default(4)
+  defaultTaskDurationDays  Int                @default(3)
+  passingScore             Int                @default(70)
+  maxRevisionAttempts      Int                @default(2)
+  passingRequiredForNext   Boolean            @default(true)
+  allowedSubmissionFormats String             @default("text,zip,pdf,py,js,ts,ipynb,docx")
+  users                    User[]
+  internships              Internship[]
+  syllabi                  Syllabus[]
+  taskTemplates            TaskTemplate[]
+  learningMaterials        LearningMaterial[]
+  createdAt                DateTime           @default(now())
+  updatedAt                DateTime           @updatedAt
+}
+
+model Syllabus {
+  id            String             @id @default(cuid())
+  domainId      String
+  domain        Domain             @relation(fields: [domainId], references: [id], onDelete: Cascade)
+  title         String
+  description   String?
+  version       String             @default("1.0")
+  isActive      Boolean            @default(true)
+  materials     LearningMaterial[]
+  taskTemplates TaskTemplate[]
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+}
+
+model LearningMaterial {
+  id               String   @id @default(cuid())
+  domainId         String
+  domain           Domain   @relation(fields: [domainId], references: [id], onDelete: Cascade)
+  syllabusId       String?
+  syllabus         Syllabus? @relation(fields: [syllabusId], references: [id], onDelete: SetNull)
+  title            String
+  originalFilename String
+  fileType         String   // "pdf" | "docx" | "txt" | "md" | "xlsx" | "csv" | "unsupported"
+  filePath         String?
+  fileSize         Int      @default(0)
+  extractedText    String?
+  extractionStatus String   @default("SUCCESS") // "SUCCESS" | "FAILED" | "UNSUPPORTED"
+  errorMessage     String?
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+
+  @@index([domainId])
+}
+
+model TaskTemplate {
+  id                     String       @id @default(cuid())
+  domainId               String
+  domain                 Domain       @relation(fields: [domainId], references: [id], onDelete: Cascade)
+  syllabusId             String?
+  syllabus               Syllabus?    @relation(fields: [syllabusId], references: [id], onDelete: SetNull)
+  title                  String
+  topic                  String
+  learningObjective      String
+  instructions           String
+  expectedDeliverables   String
+  difficulty             String       @default("BEGINNER") // "BEGINNER" | "INTERMEDIATE" | "ADVANCED"
+  suggestedDurationDays  Int          @default(3)
+  deadlineRules          String?
+  evaluationRubric       String       // Structured JSON string
+  passingCriteria        String
+  allowedSubmissionFormats String     @default("text,zip,pdf,py,js,ts,ipynb,docx")
+  sequenceOrder          Int          @default(1)
+  status                 String       @default("APPROVED") // "DRAFT" | "APPROVED" | "ARCHIVED"
+  assignments            Assignment[]
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
+
+  @@index([domainId, sequenceOrder])
+}
+
+model Internship {
+  id                  String       @id @default(cuid())
+  internId            String
+  intern              User         @relation(fields: [internId], references: [id], onDelete: Cascade)
+  domainId            String
+  domain              Domain       @relation(fields: [domainId], references: [id])
+  startDate           DateTime
+  endDate             DateTime
+  durationWeeks       Int          @default(4)
+  status              String       @default("ACTIVE") // "ACTIVE" | "COMPLETED" | "OVERDUE" | "WITHDRAWN"
+  progressPercent     Int          @default(0)
+  passingScore        Int          @default(70)
+  maxRevisionAttempts Int          @default(2)
+  passingRequired     Boolean      @default(true)
+  assignments         Assignment[]
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  @@index([internId])
+  @@index([status])
+}
+
+model Assignment {
+  id             String       @id @default(cuid())
+  internshipId   String
+  internship     Internship   @relation(fields: [internshipId], references: [id], onDelete: Cascade)
+  taskTemplateId String
+  taskTemplate   TaskTemplate @relation(fields: [taskTemplateId], references: [id])
+  sequenceOrder  Int          @default(1)
+  title          String
+  assignedDate   DateTime     @default(now())
+  dueDate        DateTime
+  extensionDays  Int          @default(0)
+  status         String       @default("PENDING") // "PENDING" | "SUBMITTED" | "IN_REVIEW" | "PASSED" | "REVISION_REQUESTED" | "FAILED" | "OVERDUE"
+  finalScore     Int?
+  attemptsCount  Int          @default(0)
+  completedAt    DateTime?
+  submissions    Submission[]
+  reviews        Review[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([internshipId, sequenceOrder])
+  @@index([status])
+}
+
+model Submission {
+  id            String     @id @default(cuid())
+  assignmentId  String
+  assignment    Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  internId      String
+  intern        User       @relation(fields: [internId], references: [id], onDelete: Cascade)
+  attemptNumber Int        @default(1)
+  textContent   String?
+  projectUrl    String?
+  filePath      String?
+  fileName      String?
+  fileMime      String?
+  fileSize      Int?
+  status        String     @default("SUBMITTED") // "SUBMITTED" | "REVIEWED"
+  reviews       Review[]
+  createdAt     DateTime   @default(now())
+
+  @@index([assignmentId])
+  @@index([internId])
+}
+
+model Review {
+  id                   String     @id @default(cuid())
+  submissionId         String
+  submission           Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  assignmentId         String
+  assignment           Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  reviewerType         String     @default("AI") // "AI" | "ADMIN"
+  overallScore         Int
+  passingThreshold     Int        @default(70)
+  status               String     // "PASSED" | "REVISION_REQUESTED" | "FAILED"
+  criteriaAssessment   String     // JSON string
+  strengths            String     // JSON array or text
+  mistakes             String     // JSON array or text
+  evidence             String?    // text extracts
+  suggestions          String     // text
+  missingRequirements  String?    // JSON array or text
+  limitations          String?    // text
+  humanReviewRequired  Boolean    @default(false)
+  adminNotes           String?
+  isOverridden         Boolean    @default(false)
+  reviewedAt           DateTime   @default(now())
+  createdAt            DateTime   @default(now())
+
+  @@index([assignmentId])
+  @@index([submissionId])
+}
+
+model EmailOutbox {
+  id                  String   @id @default(cuid())
+  recipientEmail      String
+  recipientName       String
+  subject             String
+  bodyHtml            String
+  bodyText            String
+  emailType           String   // "ACCOUNT_WELCOME" | "TASK_ASSIGNED" | "SUBMISSION_CONFIRMED" | "REVIEW_FEEDBACK" | "NEXT_TASK" | "DEADLINE_REMINDER" | "TASK_OVERDUE" | "INTERNSHIP_COMPLETED"
+  relatedTaskId       String?
+  relatedInternshipId String?
+  eventKey            String?  @unique // For idempotency & duplicate prevention
+  simulatedStatus     String   @default("SIMULATED_DELIVERED")
+  sentAt              DateTime @default(now())
+  createdAt           DateTime @default(now())
+
+  @@index([recipientEmail])
+  @@index([emailType])
+}
+
+model ActivityLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  actorRole  String   @default("SYSTEM") // "ADMIN" | "INTERN" | "SYSTEM" | "AI"
+  action     String
+  entityType String
+  entityId   String?
+  details    String?  // JSON string
+  createdAt  DateTime @default(now())
+
+  @@index([action])
+  @@index([entityType])
+}
